@@ -14,17 +14,18 @@ namespace DataMiningFinalProject
     {
 
         #region vars
+
         public static List<List<Tweet>> Tweets;
 
-        public static int FileNumber = 100;
+        public static int FileNumber = 38;
         
         public static int gramSize = 1;
 
-        public static int numCounters = 10;
+        public static int numCounters = 500;
 
         public static ConcurrentDictionary<string, List<Slice>> wordToSlice = new ConcurrentDictionary<string, List<Slice>>();
 
-        public static ConcurrentDictionary<Slice, List<Counter>> sliceToWord = new ConcurrentDictionary<Slice, List<Counter>>();
+        public static ConcurrentDictionary<Slice, List<Counter>> sliceToCounter = new ConcurrentDictionary<Slice, List<Counter>>();
 
         #endregion
 
@@ -32,12 +33,64 @@ namespace DataMiningFinalProject
         static void Main(string[] args)
         {
             Tweets = new List<List<Tweet>>();
-            
-            loadTweets(FileNumber);
 
+            var tasks = new List<Task>();
+            for(int i = 0; i < FileNumber; i++)
+            {
+                var current = new Int32();
+                current = i * 100;
+                tasks.Add(Task.Factory.StartNew(() => loadTweets(current, 100)));
+            }
+
+            Task.WaitAll(tasks.ToArray());
+            
             MGDriver();
 
-            Console.Read();
+            sort();
+
+            writeFiles();
+        }
+
+        #endregion
+
+        #region write files
+
+        public static void writeFiles()
+        {
+            List<string> lines = new List<string>();
+
+            foreach (var pair in wordToSlice)
+            {
+                string json = JsonConvert.SerializeObject(pair);
+                lines.Add(json);
+            }
+
+            File.WriteAllLines(@"C:\Users\taylor\Desktop\TweetData\HeavyHitters\wordToSlice.txt", lines);
+
+            lines = new List<string>();
+
+            foreach (var pair in sliceToCounter)
+            {
+                string json = JsonConvert.SerializeObject(pair);
+                lines.Add(json);
+            }
+
+            File.WriteAllLines(@"C:\Users\taylor\Desktop\TweetData\HeavyHitters\sliceToCounter.txt", lines);
+
+        }
+
+        #endregion
+
+        #region sorting
+
+        public static void sort()
+        {
+            foreach(var pair in sliceToCounter)
+            {
+                List<Counter> sorted = pair.Value.OrderByDescending(x => x.count).ToList();
+
+                sliceToCounter[pair.Key] = sorted;
+            }
         }
 
         #endregion
@@ -92,7 +145,7 @@ namespace DataMiningFinalProject
 
                     }
 
-                    sliceToWord.TryAdd(new Slice() { latitude = j, longitude = i },
+                    sliceToCounter.TryAdd(new Slice() { latitude = j, longitude = i },
                         (from counter in currentSlice select counter).ToList());
                 }
             }
@@ -158,26 +211,26 @@ namespace DataMiningFinalProject
         #endregion
 
         #region load tweets
-        public static void loadTweets(int numberOfFiles)
+        public static void loadTweets(int start, int range)
         {
-            foreach(var i in Enumerable.Range(0, numberOfFiles))
+            foreach(var i in Enumerable.Range(start, range))
             {
                 List<string> lines = File.ReadAllLines(@"C:\Users\taylor\Desktop\TweetData\Sunday22\TweetFile" + i + ".tweet").ToList();
 
                 var tweets = new List<Tweet>();
                 try
                 {
-                    //tweets = (from line in lines select JsonConvert.DeserializeObject<Tweet>(line)).ToList();
-
                     foreach(var line in lines)
                     {
                         var current = JsonConvert.DeserializeObject<Tweet>(line);
 
                         current.Text = HttpUtility.UrlDecode(current.Text);
 
-                        current.Text = string.Join(" ", (from word in current.Text.Split(new string[] { " ", "  ", "   ", "    " }, StringSplitOptions.None) where word.StartsWith("#") select word.Trim()));
+                        current.Text = string.Join(" ", (from word in current.Text.Split(new string[] { " ", "  ", "   ", "    " }, StringSplitOptions.None) where word.StartsWith("#") select word.Trim().ToLower()));
 
-                        if(!String.IsNullOrWhiteSpace(current.Text))
+                        current.Text = new string(current.Text.Where(c => !char.IsPunctuation(c)).ToArray());
+
+                        if (!String.IsNullOrWhiteSpace(current.Text))
                         {
                             tweets.Add(current);
                         }
@@ -190,7 +243,7 @@ namespace DataMiningFinalProject
                 }
 
                 Tweets.Add(tweets);
-                Console.WriteLine(i);
+                Console.WriteLine(Tweets.Count);
             }
         }
 
